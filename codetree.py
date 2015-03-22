@@ -1,45 +1,60 @@
 import os
 import re
 
-headerExtensions = [".h", ".hpp"]
-sourceExtensions = headerExtensions + [ ".cpp", ".c", ".cxx"]
+HEADER_EXTENSIONS = [".h", ".hpp"]
+SOURCE_EXTENSIONS = HEADER_EXTENSIONS + [ ".cpp", ".c", ".cxx"]
 
 class SourceInfo:
     name = ""
-    fullPath = ""
-
+    prefix = ""
+    extension = ""
+    path = ""
     lloc = 0
     includeList = []
     includedByList = []
 
-def get_immediate_subdirectories(dir):
-    return [ os.path.join(dir,name) for name in os.listdir(dir)
-            if os.path.isdir(os.path.join(dir, name))]
+def get_immediate_subdirectories(dir_path):
+    """
+    Returns the immediate subdirectories of the given directory. 
+
+    :param str dir_path: a directory path string
+    :returns list: a list of subdiretory path strings
+    """
+
+    return [ os.path.join(dir_path,name) for name in os.listdir(dir)
+            if os.path.isdir(os.path.join(dir_path, name))]
  
-def get_all_subdirectories(dir, extensions):
+def print_subdir_info(dir_path, excludes):
+    """
+    Prints information in subdirectories
+    :param str dir_path: a directory path string
+    :param list excludes: a list of directory names (e.g. "svn") to avoid visiting
+    """
+
     from os.path import join, getsize
-    for root, dirs, files in os.walk(path):
+
+    for root, dirs, files in os.walk(dir_path):
+        dirs.remove(excludes)  # don't visit excluded directories
         print(root, "consumes", end=" ")
         print(sum(getsize(join(root, name)) for name in files), end=" ")
         print("bytes in", len(files), "non-directory files")
-        if 'svn' in dirs:
-            dirs.remove('svn')  # don't visit SVN directories
+        
 
 def find_extensions(files, extensions):
     return [ name for name in files if os.path.splitext(name)[1] in extensions]
 
-def remove_strings(stringList, excludes):
+def remove_strings(strings, excludes):
     """
     Removes strings containing exclude substrings from a list
 
-    :param list stringList: the list of strings
+    :param list strings: the list of strings
     :param list excludes: the list of exclusion substrings
-    :returns list: a list of all the strings in stringList that do not contain the
+    :returns list: a list of all the everything in strings that doesn't contain the 
         exlcusion substrings
     """
     
     outList = []
-    for s in stringList:
+    for s in strings:
         for e in excludes:
             if e in s:
                 break
@@ -68,24 +83,6 @@ def find_files(path, extensions, excludes = []):
 
     fileList = remove_strings(fileList, excludes)
     return fileList
-
-def get_filename_from_string(path, lower=True):
-    """
-    Extracts the filename from a path string
-
-    :param str path:  the path
-    :returns str: the filename (name+extension) string
-    """
-    
-    prog = re.compile('[a-zA-Z0-9_]+[.][a-zA-Z0-9_]+')
-    match = prog.search(path)
-    if match is not None:
-        if lower == True:
-            return match.group().lower()
-        else:
-            return match.group()
-    else:
-        return None
 
 def extract_includes(file):
     """
@@ -117,70 +114,77 @@ def extract_includes(file):
     f.closed
     return includeList
 
-def create_empty_source_dictionary(sourcePathList):
+def create_empty_source_dictionary(source_paths):
     """
     Creates an empty dictionary from a list of source files.  Hashing is done
     on the filename (w/ extension) only, not the full path.
 
-    :param list sourceList: a list of source files (full path)
-    :returns dictionary: an empty, initialized source dictionary
+    :param list source_paths: a list of source files (full path)
+    :returns source_dictionary: an empty, initialized source dictionary
     """
     
     source_dictionary = {}
-    for sourcePath in sourcePathList:
+    for sourcePath in source_paths:
+       
+        sourceFile = os.path.basename(sourcePath)
+        filePrefix, fileExt = os.path.splitext(sourceFile)
+
+        print(sourceFile)
+
         # prepare a structure for the header
         struct = SourceInfo()
-        struct.pathName = sourcePath
-        struct.count = 0
-        struct.occurences = []
-              
-        #extract just the header's name, no extension, from the path
-        sourceFile = get_filename_from_string(sourcePath)
-        fileName, fileExt = os.path.splitext(sourceFile)
-
-        struct.name = fileName
+        struct.path = sourcePath
+        struct.name = sourceFile
+        struct.prefix = filePrefix
+        struct.extension = fileExt
 
         #hash on the header name (including exetnsion)
         source_dictionary[sourceFile] = struct
         
     return source_dictionary
 
-def update_source_dictionary(path, sourceDict):
+def update_source_dictionary(source_dictionary, path):
     """
     Update the source dictionary by processing a new source file.  Updates are
     done in place.
 
     :param string path: The path to the source file
-    :param dictionary sourceDict: the source dictionary.
+    :param dictionary source_dictionary: the source dictionary.
     """
 
-    includeHeaderList = extract_includes(path)
-    if includeHeaderList == []:
+    included_files = extract_includes(path)
+    if included_files == []:
         return
- 
+
     # get the file name (no extension) for the file that contained the includes
-    fileName = get_filename_from_string(path)
+    sourceFile = os.path.basename(path)
 
     try:
-        filePrefix, fileExt = os.path.splitext(fileName)
+        fileName, fileExt = os.path.splitext(sourceFile)
     except AttributeError:
         print("Ignored", path, "[attribute error]")
         return
 
+    sourceStruct = source_dictionary.get(sourceFile)
+    if sourceStruct is None:
+        return
+
     # update the stats for each included header
-    for includedFile in includeHeaderList:
-        #print(includedFile)
+    for includeFile in included_files:
+        sourceStruct.includeList.append(includeFile)
+
         # assign this to a dictionary
-        sourceStruct = sourceDict.get(includedFile)
+        includeStruct = source_dictionary.get(includeFile)
 
         # don't increment the count if the filename is the same as
         # the header name (e.g. if the include is referenced in the
         # corresponding c file
-        if sourceStruct is not None and sourceStruct.name != filePrefix:
-            sourceStruct.count = sourceStruct.count+1
-            sourceStruct.occurences.append(path)
-            sourceDict[includedFile] = sourceStruct
-    
+        if includeStruct is not None:
+            includeStruct.includedByList.append(path)
+        
+        #source_dictionary[includeFile] = includeStruct
+
+    source_dictionary[sourceFile] = sourceStruct
 
 def create_source_dictionary(dirName, excludes = []):
     """
@@ -195,37 +199,37 @@ def create_source_dictionary(dirName, excludes = []):
     """
 
     # find all the headers in the directory (full paths)
-    sourcePaths = find_files(dirName, sourceExtensions, excludes)
+    path_list = find_files(dirName, SOURCE_EXTENSIONS, excludes)
 
     # create the header dictionary from the list of header files
-    if len(sourcePaths)==0:
+    if len(path_list)==0:
         return
 
-    sourceDict = create_empty_source_dictionary(sourcePaths)
+    source_dictionary = create_empty_source_dictionary(path_list)
  
     # we're going to look through all of the header and code files
     # for includes of each header file name in the file and update the
     # info for each header file in the dictionary
-    for file in sourcePaths:
-        update_source_dictionary(file, sourceDict)
+    for file in path_list:
+         update_source_dictionary(source_dictionary, file)
 
-    return sourceDict           
+    return source_dictionary           
 
-def find_strays(dictionary):
+def find_strays(source_dictionary):
     """
     Looks through the source dictionary for occurences of strays: a header not 
     included by anything other than an identically named cpp file, and the cpp
     file itself.
 
-    :param dict dictionary: the source dictionary
+    :param dict source_dictionary: the source dictionary created by create_source_dictionary
     :returns list: the list of stray headers and cpp paths, sorted by path
     """
 
-    num_includes = 1
+    NUM_INCLUDES = 0
     
     # find strays and append to the list
     itemList = []
-    for val in dictionary.values():
+    for val in source_dictionary.values():
         itemList.append(val)
 
     # sort the list by pathname
@@ -233,10 +237,14 @@ def find_strays(dictionary):
 
     count = 0
     for o in l:
-        if o.count == num_includes:
+        if o.count == NUM_INCLUDES:
             print(o.pathName,"->",o.occurences)
             count=count+1
 
     print(count," stray headers out of ",len(l)," [",round(count/len(l)*100,2),"%]",sep='')
-    return
+    return l
+
+def main(argv=None):
+    d = create_source_dictionary("c:\\code\\dev-vr-v3\\core")
+    find_strays(d)
     
