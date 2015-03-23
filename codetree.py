@@ -5,13 +5,15 @@ HEADER_EXTENSIONS = [".h", ".hpp"]
 SOURCE_EXTENSIONS = HEADER_EXTENSIONS + [ ".cpp", ".c", ".cxx"]
 
 class SourceInfo:
-    name = ""
-    prefix = ""
-    extension = ""
-    path = ""
-    lloc = 0
-    includeList = []
-    includedByList = []
+    def __init__(self):
+        self.name = ""
+        self.prefix = ""
+        self.extension = ""
+        self.path = ""
+        self.lloc = 0
+        self.includeList = []
+        self.includedByCount = 0
+        self.includedByList = []
 
 def get_filename_from_string(path, lower=True):
     """
@@ -173,22 +175,17 @@ def update_source_dictionary(source_dictionary, path):
         return
 
     # get the file name (no extension) for the file that contained the includes
-    sourceFile = os.path.basename(path)
+    fileName = os.path.basename(path)
 
-    try:
-        fileName, fileExt = os.path.splitext(sourceFile)
-    except AttributeError:
-        print("Ignored", path, "[attribute error]")
-        return
-
-    sourceStruct = source_dictionary.get(sourceFile)
+    sourceStruct = source_dictionary.get(fileName)
     if sourceStruct is None:
         return
 
+    sourceStruct.includeList = included_files
+
     # update the stats for each included header
     for includeFile in included_files:
-        sourceStruct.includeList.append(includeFile)
-
+    
         # assign this to a dictionary
         includeStruct = source_dictionary.get(includeFile)
 
@@ -196,12 +193,8 @@ def update_source_dictionary(source_dictionary, path):
         # the header name (e.g. if the include is referenced in the
         # corresponding c file
         if includeStruct is not None:
-            includeStruct.includedByList.append(path)
+            includeStruct.includedByList.append(fileName)
         
-        #source_dictionary[includeFile] = includeStruct
-
-    #source_dictionary[sourceFile] = sourceStruct
-
 def create_source_dictionary(dirName, excludes = []):
     """
     Searches through a directory (recursive) looking for relationships between 
@@ -227,7 +220,11 @@ def create_source_dictionary(dirName, excludes = []):
     # for includes of each header file name in the file and update the
     # info for each header file in the dictionary
     for file in path_list:
-         update_source_dictionary(source_dictionary, file)
+        update_source_dictionary(source_dictionary, file)
+
+    # update the convenience count
+    for val in source_dictionary.values():
+        val.includedByCount = len(val.includedByList)
 
     return source_dictionary           
 
@@ -241,26 +238,27 @@ def find_strays(source_dictionary):
     :returns list: the list of stray headers and cpp paths, sorted by path
     """
 
-    NUM_INCLUDES = 0
-    
     # find strays and append to the list
     itemList = []
     for val in source_dictionary.values():
         itemList.append(val)
 
     # sort the list by pathname
-    l= sorted(itemList, key = lambda x: (x.count, x.pathName) )  
+    l= sorted(itemList, key = lambda x: (x.includedByCount, x.path) )  
 
     count = 0
     for o in l:
-        if o.count == NUM_INCLUDES:
-            print(o.pathName,"->",o.occurences)
+        if o.includedByCount == 1 and source_dictionary[o.includedByList[0]].prefix==o.prefix:
+            print(o.path,"->",source_dictionary[o.includedByList[0]].path)
             count=count+1
 
     print(count," stray headers out of ",len(l)," [",round(count/len(l)*100,2),"%]",sep='')
     return l
 
 def test():
-    d = create_source_dictionary("d:\\code\\dev-vr-v3\\core")
+    d = create_source_dictionary("c:\\code\\dev-vr-v3", ["stdafx.h", "stdafx.cpp"])
+    if d is None:
+        return
+
     find_strays(d)
     
