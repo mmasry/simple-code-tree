@@ -13,6 +13,24 @@ class SourceInfo:
     includeList = []
     includedByList = []
 
+def get_filename_from_string(path, lower=True):
+    """
+    Extracts the filename from a path string
+
+    :param str path:  the path
+    :returns str: the filename (name+extension) string
+    """
+    
+    prog = re.compile('[a-zA-Z0-9_]+[.][a-zA-Z0-9_]+')
+    match = prog.search(path)
+    if match is not None:
+        if lower == True:
+            return match.group().lower()
+        else:
+            return match.group()
+    else:
+        return None
+    
 def get_immediate_subdirectories(dir_path):
     """
     Returns the immediate subdirectories of the given directory. 
@@ -129,8 +147,6 @@ def create_empty_source_dictionary(source_paths):
         sourceFile = os.path.basename(sourcePath)
         filePrefix, fileExt = os.path.splitext(sourceFile)
 
-        print(sourceFile)
-
         # prepare a structure for the header
         struct = SourceInfo()
         struct.path = sourcePath
@@ -184,7 +200,7 @@ def update_source_dictionary(source_dictionary, path):
         
         #source_dictionary[includeFile] = includeStruct
 
-    source_dictionary[sourceFile] = sourceStruct
+    #source_dictionary[sourceFile] = sourceStruct
 
 def create_source_dictionary(dirName, excludes = []):
     """
@@ -244,7 +260,7 @@ def find_strays(source_dictionary):
     print(count," stray headers out of ",len(l)," [",round(count/len(l)*100,2),"%]",sep='')
     return l
 
-def main(argv=None):
-    d = create_source_dictionary("c:\\code\\dev-vr-v3\\core")
+def test():
+    d = create_source_dictionary("d:\\code\\dev-vr-v3\\core")
     find_strays(d)
     
