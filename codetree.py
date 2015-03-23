@@ -10,10 +10,16 @@ class SourceInfo:
         self.prefix = ""
         self.extension = ""
         self.path = ""
-        self.lloc = 0
+        self.line_count = 0
         self.includeList = []
         self.includedByCount = 0
         self.includedByList = []
+        
+class FileInfo:
+    def __init__(self):
+        self.line_count = 0
+        self.included_files = []        
+
 
 def get_filename_from_string(path, lower=True):
     """
@@ -104,35 +110,41 @@ def find_files(path, extensions, excludes = []):
     fileList = remove_strings(fileList, excludes)
     return fileList
 
-def extract_includes(file):
+def process_file(file_path):
     """
     Finds the includes in a source file file by looking for #include lines.
-    Leading whitespace is ignored.
+    Leading whitespace is ignored.  Also does a line count for non-comment
+    lines
 
-    :param string file: the filename
-    :returns list: a list of files (filename only) included in the file
+    :param string file_path: the file path
+    :returns FileInfo: a class that stores the list of includes and the line count
     """
-    count = 0
-    includeList = [];
+    file_info = FileInfo()
 
     # have to wrap this in a try-catch block to catch
     # unicode issues
+    count = 0
+
     try: 
-        with open(file, 'r') as f:
+        with open(file_path, 'r') as f:
             for s in f:
+                # count the lines
+                count = count + s.count(';')
+                
+                # find the includes
                 s = s.strip()
                 if s.startswith("#include"):
-                    count = count + 1
                     headerName = get_filename_from_string(s)
                     if headerName is not None:
-                        includeList.append(headerName)
-    except UnicodeDecodeError:
-        f.closed
-        print("Ignored", file, "[unicode error]")
-        return [];
+                        file_info.included_files.append(headerName)
 
-    f.closed
-    return includeList
+    except UnicodeDecodeError:
+        print("Ignored", file_path, "[unicode error]")
+
+    f.closed                        
+    file_info.line_count = count
+
+    return file_info
 
 def create_empty_source_dictionary(source_paths):
     """
@@ -161,7 +173,7 @@ def create_empty_source_dictionary(source_paths):
         
     return source_dictionary
 
-def update_source_dictionary(source_dictionary, path):
+def update_source_dictionary(source_dictionary, file_path):
     """
     Update the source dictionary by processing a new source file.  Updates are
     done in place.
@@ -170,30 +182,31 @@ def update_source_dictionary(source_dictionary, path):
     :param dictionary source_dictionary: the source dictionary.
     """
 
-    included_files = extract_includes(path)
-    if included_files == []:
+    file_info = process_file(file_path)
+    if file_info.included_files == []:
         return
 
     # get the file name (no extension) for the file that contained the includes
-    fileName = os.path.basename(path)
+    file_name = os.path.basename(file_path)
 
-    sourceStruct = source_dictionary.get(fileName)
+    sourceStruct = source_dictionary.get(file_name)
     if sourceStruct is None:
         return
 
-    sourceStruct.includeList = included_files
+    sourceStruct.includeList = file_info.included_files
+    sourceStruct.line_count = file_info.line_count
 
     # update the stats for each included header
-    for includeFile in included_files:
+    for f in file_info.included_files:
     
         # assign this to a dictionary
-        includeStruct = source_dictionary.get(includeFile)
+        include_struct = source_dictionary.get(f)
 
         # don't increment the count if the filename is the same as
         # the header name (e.g. if the include is referenced in the
         # corresponding c file
-        if includeStruct is not None:
-            includeStruct.includedByList.append(fileName)
+        if include_struct is not None:
+            include_struct.includedByList.append(file_name)
         
 def create_source_dictionary(dirName, excludes = []):
     """
@@ -247,12 +260,23 @@ def find_strays(source_dictionary):
     l= sorted(itemList, key = lambda x: (x.includedByCount, x.path) )  
 
     count = 0
+    line_count = 0
+    total_line_count = 0
+
     for o in l:
+        # keep track of all lines
+        total_line_count = total_line_count + o.line_count
+
         if o.includedByCount == 1 and source_dictionary[o.includedByList[0]].prefix==o.prefix:
             print(o.path,"->",source_dictionary[o.includedByList[0]].path)
-            count=count+1
+            count=count+2
+            
+            # add in the strays' line counts
+            line_count = line_count + o.line_count + source_dictionary[o.includedByList[0]].line_count
 
-    print(count," stray headers out of ",len(l)," [",round(count/len(l)*100,2),"%]",sep='')
+    print(count, " stray files out of ", len(l)," [",round(count/len(l)*100,2),"%]",sep='')
+    print(line_count, " stray lloc out of ", total_line_count, " [", round(line_count/total_line_count*100,2),"%]",sep='')
+
     return l
 
 def test():
