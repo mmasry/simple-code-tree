@@ -125,21 +125,27 @@ def process_file(file_path):
     # have to wrap this in a try-catch block to catch
     # unicode issues
     count = 0
+    success = False
 
-    try: 
-        with open(file_path, 'r') as f:
-            for s in f:
-                # count the lines
-                count = count + s.count(';')
-                
-                # find the includes
-                s = s.strip()
-                if s.startswith("#include"):
-                    headerName = get_filename_from_string(s)
-                    if headerName is not None:
-                        file_info.included_files.append(headerName)
+    for encoding in ['utf8', 'Cp1252']:
+        try:
+            with open(file_path, 'r', encoding=encoding) as f:
+                for s in f:
+                    # count the lines
+                    count = count + s.count(';')
 
-    except UnicodeDecodeError:
+                    # find the includes
+                    s = s.strip()
+                    if s.startswith("#include"):
+                        headerName = get_filename_from_string(s)
+                        if headerName is not None:
+                            file_info.included_files.append(headerName)
+            success = True
+            break
+        except UnicodeDecodeError:
+            pass
+
+    if not success:
         print("Ignored", file_path, "[unicode error]")
 
     f.closed                        
