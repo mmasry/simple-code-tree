@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import os
 import re
 
@@ -285,4 +286,17 @@ def test():
         return
 
     find_strays(d)
-    
+
+if __name__ == '__main__':
+    import sys
+
+    if len(sys.argv) == 2:
+        root = sys.argv[1]
+    else:
+        root = '.'
+
+    d = create_source_dictionary(root, ["stdafx.h", "stdafx.cpp"])
+    if d is None:
+        exit()
+
+    find_strays(d)
